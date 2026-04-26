@@ -121,9 +121,14 @@ export function ActiveSession({
         return null; // optional per spec
       case "episode_capture": {
         const ep = readEpisodeCapture(session.inputs[step.id]);
-        return ep.title.trim().length > 0
-          ? null
-          : "Please enter the episode title before continuing.";
+        if (!ep.title.trim()) {
+          return "Please enter the episode title before continuing.";
+        }
+        const urlExpected = Boolean(step.link?.trim());
+        if (urlExpected && !ep.url.trim()) {
+          return "Please paste the episode page URL before continuing.";
+        }
+        return null;
       }
       case "dylane_setup": {
         const d = readDylaneOpenInput(session.inputs[step.id]);
@@ -166,8 +171,16 @@ export function ActiveSession({
 
     // Side effects per step type
     if (step.inputType === "question_logger") {
-      const total = questionsVal.length;
-      const score = questionsVal.filter((q) => q.correct).length;
+      const isDoubleTimedSecondLog =
+        entry.sessionType === "rfi_double_timed" && step.id === "dt_log2";
+      const ep1FromInputs = Array.isArray(session.inputs.dt_log1)
+        ? (session.inputs.dt_log1 as QuestionLog[])
+        : [];
+      const mergedQuestions = isDoubleTimedSecondLog
+        ? [...ep1FromInputs, ...questionsVal]
+        : questionsVal;
+      const total = mergedQuestions.length;
+      const score = mergedQuestions.filter((q) => q.correct).length;
       if (entry.isCheckpoint) {
         onPatch({
           checkpointQuestions: questionsVal,
@@ -175,7 +188,7 @@ export function ActiveSession({
         });
       } else {
         onPatch({
-          questions: questionsVal,
+          questions: mergedQuestions,
           drillScore: score,
           drillTotal: total,
         });
@@ -322,7 +335,7 @@ export function ActiveSession({
                       type="url"
                       value={ep.url}
                       onChange={(e) => setInput({ ...ep, url: e.target.value })}
-                      placeholder="Paste episode page URL (optional)"
+                      placeholder="Paste episode page URL"
                     />
                   </div>
                 </>

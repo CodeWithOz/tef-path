@@ -43,10 +43,10 @@ function SessionHarness({
   );
 }
 
-function makeSession(stepIndex = 0): SessionLog {
+function makeSession(stepIndex = 0, sessionType: SessionType = "tv5_timed"): SessionLog {
   return {
     sessionId: "test-session",
-    sessionType: "tv5_timed",
+    sessionType,
     completedAt: null,
     elapsedSeconds: 0,
     pass1Notes: "",
@@ -69,11 +69,79 @@ function makeSession(stepIndex = 0): SessionLog {
 }
 
 describe("ActiveSession expected behavior", () => {
-  it("requires both episode title and episode URL for sessions that open an episode", () => {
-    const session = makeSession(0);
+  it("requires episode title and episode URL before advancing when the step links to a catalog", async () => {
+    const user = userEvent.setup();
+    const session = makeSession(0, "rfi_3pass");
+    render(<SessionHarness entry={makeEntry("rfi_3pass")} initialSession={session} />);
+
+    expect(screen.getByLabelText(/episode title/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/episode url/i)).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/episode title/i), "Journal du test");
+    await user.click(screen.getByRole("button", { name: /next step/i }));
+
+    expect(
+      screen.getByText(/please paste the episode page url before continuing/i),
+    ).toBeInTheDocument();
+
+    await user.type(
+      screen.getByLabelText(/episode url/i),
+      "https://francaisfacile.rfi.fr/fr/podcasts/journal-en-fran%C3%A7ais-facile-102",
+    );
+    await user.click(screen.getByRole("button", { name: /next step/i }));
+
+    expect(await screen.findByText(/pass 1/i)).toBeInTheDocument();
+  });
+
+  it("merges RFI double-timed episode logs so dominant bucket tally uses both episodes", async () => {
+    const user = userEvent.setup();
+    const onPatch = vi.fn();
+    const ep1 = [{ questionNumber: 1, correct: false, errorBucket: "C" as const }];
+    const ep2 = [{ questionNumber: 1, correct: false, errorBucket: "V" as const }];
+    const session = makeSession(7, "rfi_double_timed");
+    session.questions = ep1;
+    session.inputs.dt_log1 = ep1;
+    session.inputs.dt_log2 = ep2;
+
     render(
       <ActiveSession
-        entry={makeEntry("rfi_3pass")}
+        entry={makeEntry("rfi_double_timed")}
+        session={session}
+        stepElapsed={0}
+        onPatch={onPatch}
+        onComplete={vi.fn()}
+        onResetStepTimer={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /next step/i }));
+
+    expect(onPatch).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        questions: [
+          { questionNumber: 1, correct: false, errorBucket: "C" },
+          { questionNumber: 1, correct: false, errorBucket: "V" },
+        ],
+        drillScore: 0,
+        drillTotal: 2,
+      }),
+    );
+    expect(onPatch).toHaveBeenNthCalledWith(2, { stepIndex: 8 });
+  });
+
+  it("shows wrong-question bucket counts across both double-timed episodes after merge", () => {
+    const session = makeSession(9, "rfi_double_timed");
+    session.questions = [
+      { questionNumber: 1, correct: false, errorBucket: "C" },
+      { questionNumber: 2, correct: true, errorBucket: null },
+      { questionNumber: 1, correct: false, errorBucket: "V" },
+      { questionNumber: 2, correct: false, errorBucket: "C" },
+    ];
+
+    render(
+      <ActiveSession
+        entry={makeEntry("rfi_double_timed")}
         session={session}
         stepElapsed={0}
         onPatch={vi.fn()}
@@ -82,8 +150,8 @@ describe("ActiveSession expected behavior", () => {
       />,
     );
 
-    expect(screen.getByLabelText(/episode title/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/episode url/i)).toBeInTheDocument();
+    expect(screen.getByText(/V:\s*1/i)).toBeInTheDocument();
+    expect(screen.getByText(/C:\s*2/i)).toBeInTheDocument();
   });
 
   it("lets user pick Dylane video count and renders matching checklist size", async () => {
