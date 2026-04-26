@@ -112,8 +112,10 @@ function Index() {
   }, [globalActive, stepStartedAt]);
 
   const startSession = () => {
-    // Mark started by bumping elapsed by 0 (will tick from here)
-    updateSession(currentEntry.sessionId, { stepIndex: 0 });
+    updateSession(currentEntry.sessionId, {
+      stepIndex: 0,
+      startedAt: new Date().toISOString(),
+    });
     setStepTimerKey((k) => k + 1);
   };
 
