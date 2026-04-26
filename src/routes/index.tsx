@@ -14,7 +14,14 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { ExternalLink, Play, RotateCcw, Settings as SettingsIcon, Download, Upload } from "lucide-react";
+import {
+  ExternalLink,
+  Play,
+  RotateCcw,
+  Settings as SettingsIcon,
+  Download,
+  Upload,
+} from "lucide-react";
 import { useAppState, useSessionTimer, formatTime } from "@/lib/tef/store";
 import { SCHEDULE, getEntry, getNextEntry, getEntryIndex } from "@/lib/tef/schedule";
 import { SESSION_TYPE_LABEL } from "@/lib/tef/types";
@@ -34,7 +41,8 @@ export const Route = createFileRoute("/")({
       { property: "og:title", content: "TEF Listening — 6-Month Prep Dashboard" },
       {
         property: "og:description",
-        content: "Guided 6-month TEF Canada listening preparation with timers, notes, and progress tracking.",
+        content:
+          "Guided 6-month TEF Canada listening preparation with timers, notes, and progress tracking.",
       },
     ],
   }),
@@ -56,16 +64,26 @@ const RESOURCE_LINKS: Record<string, { label: string; href: string }> = {
     label: "TV5MONDE (B2 exercises)",
     href: "https://apprendre.tv5monde.com/fr/exercices-de-francais/7-jours-sur-la-planete",
   },
-  error_bucket_drill: { label: "Choose based on your dominant error", href: "https://francaisfacile.rfi.fr" },
-  rfi_double_timed: { label: "RFI — two episodes back-to-back", href: "https://francaisfacile.rfi.fr" },
-  targeted_error_drill: { label: "Choose based on your dominant error", href: "https://francaisfacile.rfi.fr" },
+  error_bucket_drill: {
+    label: "Choose based on your dominant error",
+    href: "https://francaisfacile.rfi.fr",
+  },
+  rfi_double_timed: {
+    label: "RFI — two episodes back-to-back",
+    href: "https://francaisfacile.rfi.fr",
+  },
+  targeted_error_drill: {
+    label: "Choose based on your dominant error",
+    href: "https://francaisfacile.rfi.fr",
+  },
   low_pressure: { label: "Anything that interests you", href: "https://francaisfacile.rfi.fr" },
   checkpoint: { label: "PrepMyTEF (full listening mock)", href: "https://www.prepmytef.com" },
 };
 
 const SESSION_DESCRIPTION: Record<string, string> = {
   dylane: "Two pronunciation videos with hands-on aloud practice and a short reflection.",
-  rfi_3pass: "Three passes on one RFI episode: blind listen, gap-fill with transcript, then shadow.",
+  rfi_3pass:
+    "Three passes on one RFI episode: blind listen, gap-fill with transcript, then shadow.",
   tv5_timed: "Single-pass TV5MONDE report under exam conditions, then B1 quiz with answer logging.",
   rfi_timed_b2: "Single-pass RFI under exam conditions, then B2 quiz with answer logging.",
   tv5_3pass_b2: "TV5MONDE three-pass with a B2 quiz between Pass 2 and Pass 3 shadowing.",
@@ -120,8 +138,7 @@ function Index() {
   };
 
   const endSession = () => {
-    // Save current state but don't mark complete
-    updateSession(currentEntry.sessionId, {});
+    updateSession(currentEntry.sessionId, { startedAt: null });
   };
 
   const completeSession = () => {
@@ -347,9 +364,7 @@ function CompleteView({
         <p className="mt-1 text-sm text-muted-foreground">{entry.label}</p>
 
         <div className="mt-6 space-y-2 text-left">
-          {contentUsed && (
-            <Row label="Content used" value={contentUsed} />
-          )}
+          {contentUsed && <Row label="Content used" value={contentUsed} />}
           {bucket && <Row label="Dominant error" value={bucket} />}
           {drillScore != null && drillTotal != null && (
             <Row label="Drill score" value={`${drillScore} / ${drillTotal}`} />
@@ -394,7 +409,9 @@ function ScheduleList({
   const groups = useMemo(() => {
     const map = new Map<string, typeof SCHEDULE>();
     for (const e of SCHEDULE) {
-      const key = e.isCheckpoint ? "Checkpoints" : `Month ${e.label.match(/Month (\d+)/)?.[1] ?? "?"}`;
+      const key = e.isCheckpoint
+        ? "Checkpoints"
+        : `Month ${e.label.match(/Month (\d+)/)?.[1] ?? "?"}`;
       const arr = map.get(key) ?? [];
       arr.push(e);
       map.set(key, arr);

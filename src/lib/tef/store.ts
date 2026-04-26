@@ -89,7 +89,8 @@ export function useAppState() {
     (sessionId: string, patch: Partial<SessionLog> | ((s: SessionLog) => Partial<SessionLog>)) => {
       setState((prev) => {
         const entry = getEntry(sessionId);
-        const current = prev.sessions[sessionId] ?? emptySession(sessionId, entry?.sessionType ?? "dylane");
+        const current =
+          prev.sessions[sessionId] ?? emptySession(sessionId, entry?.sessionType ?? "dylane");
         const p = typeof patch === "function" ? patch(current) : patch;
         return {
           ...prev,
@@ -182,5 +183,16 @@ export function formatTime(seconds: number): string {
 export function bucketTally(qs: { errorBucket: ErrorBucket | null }[]) {
   const tally: Record<ErrorBucket, number> = { V: 0, C: 0, S: 0, D: 0 };
   for (const q of qs) if (q.errorBucket) tally[q.errorBucket]++;
+  return tally;
+}
+
+/** Counts error buckets for incorrect questions only (timed drill review). */
+export function wrongQuestionsBucketTally(
+  qs: { correct: boolean; errorBucket: ErrorBucket | null }[],
+) {
+  const tally: Record<ErrorBucket, number> = { V: 0, C: 0, S: 0, D: 0 };
+  for (const q of qs) {
+    if (!q.correct && q.errorBucket) tally[q.errorBucket]++;
+  }
   return tally;
 }

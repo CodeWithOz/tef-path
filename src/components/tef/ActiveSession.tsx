@@ -3,18 +3,53 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { ExternalLink, ArrowLeft, ArrowRight, AlertCircle } from "lucide-react";
 import { ErrorBucketSelect } from "./ErrorBucketSelect";
 import { QuestionLogger } from "./QuestionLogger";
-import {
-  STEPS_BY_TYPE,
-  ebdDrillText,
-  checkpointDecisionText,
-  type StepDef,
-} from "@/lib/tef/steps";
-import type { SessionLog, QuestionLog } from "@/lib/tef/types";
-import type { ScheduleEntry } from "@/lib/tef/types";
-import { formatTime } from "@/lib/tef/store";
+import { STEPS_BY_TYPE, ebdDrillText, checkpointDecisionText, type StepDef } from "@/lib/tef/steps";
+import type { SessionLog, QuestionLog, ScheduleEntry } from "@/lib/tef/types";
+import { formatTime, wrongQuestionsBucketTally } from "@/lib/tef/store";
+
+export type EpisodeCaptureValue = { title: string; url: string };
+
+function readEpisodeCapture(raw: unknown): EpisodeCaptureValue {
+  if (raw && typeof raw === "object" && "title" in raw) {
+    const o = raw as Record<string, unknown>;
+    return {
+      title: String(o.title ?? ""),
+      url: String(o.url ?? ""),
+    };
+  }
+  if (typeof raw === "string") {
+    return { title: raw, url: "" };
+  }
+  return { title: "", url: "" };
+}
+
+export type DylaneOpenInput = { countText: string; videosNote: string };
+
+function readDylaneOpenInput(raw: unknown): DylaneOpenInput {
+  if (raw && typeof raw === "object" && "countText" in raw) {
+    const o = raw as Record<string, unknown>;
+    return {
+      countText: String(o.countText ?? "2"),
+      videosNote: String(o.videosNote ?? ""),
+    };
+  }
+  return { countText: "2", videosNote: "" };
+}
+
+function resolveChecklistLabels(step: StepDef, session: SessionLog): string[] {
+  if (step.checklistItems?.length) return step.checklistItems;
+  const key = step.checklistCountInputKey;
+  if (key) {
+    const raw = session.inputs[key];
+    const n = Math.max(1, Math.min(40, Number(raw) || 2));
+    return Array.from({ length: n }, (_, i) => `Video ${i + 1} watched, exercises done aloud`);
+  }
+  return [];
+}
 
 interface Props {
   entry: ScheduleEntry;
@@ -48,17 +83,19 @@ export function ActiveSession({
   };
 
   // Convenience for reading typed values
-  const textVal = (typeof getInputValue(session, step) === "string"
-    ? (getInputValue(session, step) as string)
-    : "") || "";
-  const checklistVal = (Array.isArray(getInputValue(session, step))
-    ? (getInputValue(session, step) as boolean[])
-    : []) as boolean[];
-  const questionsVal = (Array.isArray(getInputValue(session, step))
-    ? (getInputValue(session, step) as QuestionLog[])
-    : []) as QuestionLog[];
-  const bucketVal = getInputValue(session, step) as
-    | "V" | "C" | "S" | "D" | null | undefined;
+  const textVal =
+    (typeof getInputValue(session, step) === "string"
+      ? (getInputValue(session, step) as string)
+      : "") || "";
+  const checklistVal = (
+    Array.isArray(getInputValue(session, step)) ? (getInputValue(session, step) as boolean[]) : []
+  ) as boolean[];
+  const questionsVal = (
+    Array.isArray(getInputValue(session, step))
+      ? (getInputValue(session, step) as QuestionLog[])
+      : []
+  ) as QuestionLog[];
+  const bucketVal = getInputValue(session, step) as "V" | "C" | "S" | "D" | null | undefined;
 
   // Dynamic content for ebd_drill — read the bucket from the prior bucket step
   const dynamicBucket = useMemo(() => {
@@ -73,6 +110,8 @@ export function ActiveSession({
     return checkpointDecisionText(entry.checkpointNumber, session.checkpointScore);
   }, [step, entry.checkpointNumber, session.checkpointScore]);
 
+  const checklistLabels = useMemo(() => resolveChecklistLabels(step, session), [step, session]);
+
   const validate = (): string | null => {
     if (step.required === false) return null;
     switch (step.inputType) {
@@ -80,15 +119,35 @@ export function ActiveSession({
         return textVal.trim().length > 0 ? null : "Please enter some notes before continuing.";
       case "content_field":
         return null; // optional per spec
+      case "episode_capture": {
+        const ep = readEpisodeCapture(session.inputs[step.id]);
+        return ep.title.trim().length > 0
+          ? null
+          : "Please enter the episode title before continuing.";
+      }
+      case "dylane_setup": {
+        const d = readDylaneOpenInput(session.inputs[step.id]);
+        const n = parseInt(d.countText.trim(), 10);
+        if (!Number.isFinite(n) || n < 1 || n > 40) {
+          return "Enter how many videos you will watch (1–40).";
+        }
+        return null;
+      }
       case "error_bucket_select":
         return bucketVal ? null : "Please select an error bucket.";
       case "checklist": {
-        const items = step.checklistItems ?? [];
-        const allChecked = items.every((_, i) => checklistVal[i]);
+        if (checklistLabels.length === 0) return null;
+        const allChecked = checklistLabels.every((_, i) => !!checklistVal[i]);
         return allChecked ? null : "Please tick all items before continuing.";
       }
-      case "question_logger":
-        return questionsVal.length > 0 ? null : "Please log at least one question.";
+      case "question_logger": {
+        if (questionsVal.length === 0) return "Please log at least one question.";
+        const missingBucket = questionsVal.some((q) => !q.correct && q.errorBucket == null);
+        if (missingBucket) {
+          return "Specify an error category for every wrong question.";
+        }
+        return null;
+      }
       case "checkpoint_score":
         return session.checkpointScore != null ? null : "Please confirm your checkpoint score.";
       case "none":
@@ -128,6 +187,24 @@ export function ActiveSession({
     if (step.inputType === "content_field") {
       onPatch({ contentUsed: textVal });
     }
+    if (step.inputType === "episode_capture") {
+      const ep = readEpisodeCapture(session.inputs[step.id]);
+      const parts = [ep.title.trim()];
+      if (ep.url.trim()) parts.push(ep.url.trim());
+      onPatch({ contentUsed: parts.join(" — ") });
+    }
+    if (step.inputType === "dylane_setup") {
+      const d = readDylaneOpenInput(session.inputs[step.id]);
+      const n = parseInt(d.countText.trim(), 10);
+      onPatch({
+        inputs: {
+          ...session.inputs,
+          [step.id]: { countText: String(n), videosNote: d.videosNote },
+          dylane_video_count: n,
+        },
+        dylanVideosWatched: d.videosNote.trim(),
+      });
+    }
 
     if (stepIndex >= steps.length - 1) {
       onComplete();
@@ -148,7 +225,9 @@ export function ActiveSession({
     <div className="space-y-6">
       {/* Step progress */}
       <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>Step {stepIndex + 1} of {steps.length}</span>
+        <span>
+          Step {stepIndex + 1} of {steps.length}
+        </span>
         <span className="font-mono">Step time {formatTime(stepElapsed)}</span>
       </div>
       <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
@@ -221,21 +300,110 @@ export function ActiveSession({
           </div>
         )}
 
-        {step.inputType === "error_bucket_select" && (
-          <ErrorBucketSelect
-            value={bucketVal ?? null}
-            onChange={(v) => setInput(v)}
-          />
+        {step.inputType === "episode_capture" && (
+          <div className="space-y-3">
+            {(() => {
+              const ep = readEpisodeCapture(session.inputs[step.id]);
+              return (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`${step.id}-episode-title`}>Episode title</Label>
+                    <Input
+                      id={`${step.id}-episode-title`}
+                      value={ep.title}
+                      onChange={(e) => setInput({ ...ep, title: e.target.value })}
+                      placeholder="e.g. Journal du 15 janvier"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`${step.id}-episode-url`}>Episode URL</Label>
+                    <Input
+                      id={`${step.id}-episode-url`}
+                      type="url"
+                      value={ep.url}
+                      onChange={(e) => setInput({ ...ep, url: e.target.value })}
+                      placeholder="Paste episode page URL (optional)"
+                    />
+                  </div>
+                </>
+              );
+            })()}
+          </div>
         )}
 
-        {step.inputType === "checklist" && step.checklistItems && (
+        {step.inputType === "dylane_setup" && (
+          <div className="space-y-4">
+            {(() => {
+              const d = readDylaneOpenInput(session.inputs[step.id]);
+              return (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="dylane-video-count">How many Dylane videos</Label>
+                    <Input
+                      id="dylane-video-count"
+                      type="number"
+                      min={1}
+                      max={40}
+                      aria-label="How many Dylane videos"
+                      value={d.countText}
+                      onChange={(e) => setInput({ ...d, countText: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="dylane-videos-note">Which videos (optional)</Label>
+                    <Input
+                      id="dylane-videos-note"
+                      value={d.videosNote}
+                      onChange={(e) => setInput({ ...d, videosNote: e.target.value })}
+                      placeholder="e.g. Videos 7 & 8"
+                    />
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
+
+        {step.inputType === "error_bucket_select" && (
+          <div className="space-y-4">
+            {session.questions.some((q) => !q.correct) && (
+              <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-2">
+                <div className="font-medium">Wrong questions by bucket</div>
+                <div className="text-muted-foreground">
+                  {(() => {
+                    const t = wrongQuestionsBucketTally(session.questions);
+                    return (
+                      <>
+                        <span>V: {t.V}</span>
+                        {" · "}
+                        <span>C: {t.C}</span>
+                        {" · "}
+                        <span>S: {t.S}</span>
+                        {" · "}
+                        <span>D: {t.D}</span>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+            <ErrorBucketSelect value={bucketVal ?? null} onChange={(v) => setInput(v)} />
+          </div>
+        )}
+
+        {step.inputType === "checklist" && checklistLabels.length > 0 && (
           <div className="space-y-2">
-            {step.checklistItems.map((item, i) => (
-              <label key={i} className="flex items-start gap-3 rounded-md border bg-card p-3 cursor-pointer hover:bg-accent/30">
+            {checklistLabels.map((item, i) => (
+              <label
+                key={i}
+                className="flex items-start gap-3 rounded-md border bg-card p-3 cursor-pointer hover:bg-accent/30"
+              >
                 <Checkbox
                   checked={!!checklistVal[i]}
                   onCheckedChange={(c) => {
-                    const next = [...checklistVal];
+                    const next = checklistLabels.map((_, j) =>
+                      j < checklistVal.length ? !!checklistVal[j] : false,
+                    );
                     next[i] = !!c;
                     setInput(next);
                   }}

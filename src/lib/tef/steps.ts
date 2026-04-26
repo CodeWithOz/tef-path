@@ -5,6 +5,8 @@ export type InputType =
   | "question_logger"
   | "error_bucket_select"
   | "content_field"
+  | "episode_capture"
+  | "dylane_setup"
   | "checklist"
   | "checkpoint_score"
   | "none";
@@ -19,39 +21,35 @@ export interface StepDef {
   placeholder?: string;
   label?: string;
   checklistItems?: string[];
+  /** When set, checklist row labels are generated from `session.inputs[key]` (number of videos). */
+  checklistCountInputKey?: string;
   questionCount?: number; // for question_logger fixed count
   required?: boolean; // default true for inputs (except content_field)
   dynamic?: "ebd_drill" | "checkpoint_decision";
 }
 
 const RFI_LINK = "https://francaisfacile.rfi.fr";
-const TV5_LINK =
-  "https://apprendre.tv5monde.com/fr/exercices-de-francais/7-jours-sur-la-planete";
-const DYLANE_LINK =
-  "https://www.youtube.com/playlist?list=PLb0QZEF-XOxyzS3OFfH59JQNUl-dADRGm";
+const TV5_LINK = "https://apprendre.tv5monde.com/fr/exercices-de-francais/7-jours-sur-la-planete";
+const DYLANE_LINK = "https://www.youtube.com/playlist?list=PLb0QZEF-XOxyzS3OFfH59JQNUl-dADRGm";
 
 const dylane: StepDef[] = [
   {
     id: "dylane_open",
     title: "Open Dylane's playlist",
     instruction:
-      "Go to Dylane's Complete Pronunciation YouTube playlist. Continue from where you left off — do not jump around. You will watch 2 videos this session.",
+      "Go to Dylane's Complete Pronunciation YouTube playlist. Continue from where you left off — do not jump around. Choose how many videos you will complete this session, then note which ones (optional).",
     link: DYLANE_LINK,
-    inputType: "content_field",
-    label: "Which videos did you watch? e.g. Videos 7 & 8",
+    inputType: "dylane_setup",
   },
   {
     id: "dylane_watch",
     title: "Watch and do the exercises aloud",
     instruction:
-      "Watch both videos. Every time Dylane demonstrates an exercise — a word, a phrase, a rhythm pattern — pause and repeat it aloud before continuing. Do not just watch passively. The muscle memory comes from saying it, not hearing it.",
+      "Watch each video you planned. Every time Dylane demonstrates an exercise — a word, a phrase, a rhythm pattern — pause and repeat it aloud before continuing. Do not just watch passively. The muscle memory comes from saying it, not hearing it.",
     example:
       'If she demonstrates "je ne sais pas" reduced to "chais pas" — pause, say it 3 times, then unpause.',
     inputType: "checklist",
-    checklistItems: [
-      "Video 1 watched, exercises done aloud",
-      "Video 2 watched, exercises done aloud",
-    ],
+    checklistCountInputKey: "dylane_video_count",
   },
   {
     id: "dylane_notes",
@@ -72,8 +70,7 @@ const rfi3pass: StepDef[] = [
     instruction:
       "Go to francaisfacile.rfi.fr and open today's Journal en français facile episode. Do not read the transcript or exercises yet. Just have the audio ready.",
     link: RFI_LINK,
-    inputType: "content_field",
-    label: "Episode title or date",
+    inputType: "episode_capture",
   },
   {
     id: "rfi_pass1",
@@ -103,7 +100,7 @@ const rfi3pass: StepDef[] = [
     instruction:
       "Pick one sentence or short passage (60–90 seconds) from the audio — ideally something that felt fast or blurry. Play it, then pause and repeat aloud, imitating the speaker's rhythm, speed, and reductions. Do this 4–5 times until it comes out smoothly. This is decoding practice — you train your ear by forcing your mouth to reproduce the patterns.",
     example:
-      'If the speaker says "il faut qu\'on s\'en occupe" very fast and merged, shadow that exact phrase 4–5 times.',
+      "If the speaker says \"il faut qu'on s'en occupe\" very fast and merged, shadow that exact phrase 4–5 times.",
     inputType: "textarea",
     placeholder: "Which segment did you shadow? What was difficult about it?",
     required: true,
@@ -151,10 +148,7 @@ const tv5Timed: StepDef[] = [
     instruction:
       "Open the B1 exercise set for this report. Answer every question without replaying. If unsure, guess — never leave blank (TEF: no penalty for wrong). Use autocorrect to see your score.",
     inputType: "checklist",
-    checklistItems: [
-      "Exercises answered without replay",
-      "Score checked using autocorrect",
-    ],
+    checklistItems: ["Exercises answered without replay", "Score checked using autocorrect"],
   },
   {
     id: "tv5_log_questions",
@@ -189,30 +183,26 @@ const rfiTimedB2: StepDef[] = [
     instruction:
       "Open today's Journal en français facile on RFI. Do not read transcript or exercises yet.",
     link: RFI_LINK,
-    inputType: "content_field",
-    label: "Episode title or date",
+    inputType: "episode_capture",
   },
   {
     id: "rfi_b2_listen",
     title: "Listen once — no pausing",
-    instruction:
-      "Play the audio start to finish. No pause, no replay. Simulate exam conditions.",
+    instruction: "Play the audio start to finish. No pause, no replay. Simulate exam conditions.",
     inputType: "checklist",
     checklistItems: ["Audio played once through, no pausing"],
   },
   {
     id: "rfi_b2_quiz",
     title: "Answer the B2 quiz",
-    instruction:
-      "Answer the B2 quiz on RFI without replaying audio. Never leave a question blank.",
+    instruction: "Answer the B2 quiz on RFI without replaying audio. Never leave a question blank.",
     inputType: "checklist",
     checklistItems: ["B2 quiz answered without replay", "Score checked"],
   },
   {
     id: "rfi_b2_log",
     title: "Log your answers",
-    instruction:
-      "For each question, mark correct/incorrect. For wrong answers, select V/C/S/D.",
+    instruction: "For each question, mark correct/incorrect. For wrong answers, select V/C/S/D.",
     inputType: "question_logger",
     required: true,
   },
@@ -261,8 +251,7 @@ const tv53PassB2: StepDef[] = [
   {
     id: "tv5b2_quiz",
     title: "Quiz without transcript",
-    instruction:
-      "Answer the B2 exercise set without replaying. Log questions below.",
+    instruction: "Answer the B2 exercise set without replaying. Log questions below.",
     inputType: "question_logger",
     required: true,
   },
@@ -337,8 +326,7 @@ const rfiDoubleTimed: StepDef[] = [
     title: "Episode 1 — Open",
     instruction: "Open RFI Journal en français facile. Episode 1 of two.",
     link: RFI_LINK,
-    inputType: "content_field",
-    label: "Episode 1 title or date",
+    inputType: "episode_capture",
   },
   {
     id: "dt_listen1",
@@ -366,8 +354,7 @@ const rfiDoubleTimed: StepDef[] = [
     title: "Episode 2 — Open",
     instruction: "Open a second RFI episode (different from episode 1).",
     link: RFI_LINK,
-    inputType: "content_field",
-    label: "Episode 2 title or date",
+    inputType: "episode_capture",
   },
   {
     id: "dt_listen2",
