@@ -1,0 +1,9 @@
+{
+  "setup-worktree": [
+    "npm install",
+    "if [ -f \"$ROOT_WORKTREE_PATH/.env\" ]; then cp \"$ROOT_WORKTREE_PATH/.env\" .env; else echo 'No root .env found; skipping copy.'; fi",
+    "bash scripts/check-ports.sh",
+    "bash scripts/docker-compose-up.sh",
+    "bash scripts/db-migrate.sh"
+  ]
+}
