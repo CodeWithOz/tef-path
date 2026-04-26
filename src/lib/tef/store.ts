@@ -24,6 +24,7 @@ function emptySession(sessionId: string, sessionType: SessionType): SessionLog {
     dylaneNotes: "",
     contentUsed: "",
     stepIndex: 0,
+    startedAt: null,
     inputs: {},
   };
 }

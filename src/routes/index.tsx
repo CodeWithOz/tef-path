@@ -83,8 +83,7 @@ function Index() {
 
   const currentEntry = getEntry(state.currentSessionId) ?? SCHEDULE[0];
   const currentSession = getSession(currentEntry.sessionId);
-  const sessionStarted =
-    currentSession.elapsedSeconds > 0 || currentSession.stepIndex > 0;
+  const sessionStarted = !!currentSession.startedAt;
   const sessionComplete = !!currentSession.completedAt;
 
   // Global session timer — runs whenever session is started but not complete
