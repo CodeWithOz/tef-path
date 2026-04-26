@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import type { AppState, SessionLog, SessionType, ErrorBucket } from "./types";
 import { SCHEDULE, getEntry } from "./schedule";
 
+const SCHEDULE_SESSION_IDS = new Set(SCHEDULE.map((e) => e.sessionId));
+
 const STORAGE_KEY = "tef_dashboard_state";
 
 function emptySession(sessionId: string, sessionType: SessionType): SessionLog {
@@ -60,6 +62,58 @@ function saveState(state: AppState) {
   }
 }
 
+function mergeSessionFromPartial(sessionId: string, partial: unknown): SessionLog {
+  const entry = getEntry(sessionId);
+  const base = emptySession(sessionId, entry?.sessionType ?? "dylane");
+  if (!partial || typeof partial !== "object") return base;
+  const p = partial as Partial<SessionLog>;
+  return {
+    ...base,
+    ...p,
+    sessionId,
+    sessionType: entry?.sessionType ?? p.sessionType ?? base.sessionType,
+    inputs:
+      typeof p.inputs === "object" && p.inputs !== null && !Array.isArray(p.inputs)
+        ? { ...base.inputs, ...p.inputs }
+        : base.inputs,
+    questions: Array.isArray(p.questions) ? p.questions : base.questions,
+    checkpointQuestions: Array.isArray(p.checkpointQuestions)
+      ? p.checkpointQuestions
+      : base.checkpointQuestions,
+  };
+}
+
+/**
+ * Parse a JSON export from this app (or compatible backup). Returns null if invalid.
+ * Session entries are merged with defaults so older exports stay compatible.
+ */
+export function parseImportedBackup(raw: unknown): AppState | null {
+  if (raw == null || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.currentSessionId !== "string") return null;
+  if (!o.sessions || typeof o.sessions !== "object" || Array.isArray(o.sessions)) return null;
+
+  const rawSessions = o.sessions as Record<string, unknown>;
+  const sessions: Record<string, SessionLog> = {};
+  for (const id of Object.keys(rawSessions)) {
+    if (!SCHEDULE_SESSION_IDS.has(id)) continue;
+    sessions[id] = mergeSessionFromPartial(id, rawSessions[id]);
+  }
+
+  let currentSessionId = o.currentSessionId;
+  if (!SCHEDULE_SESSION_IDS.has(currentSessionId)) {
+    currentSessionId = SCHEDULE[0].sessionId;
+  }
+
+  let checkpointBaseline: number | null = null;
+  if (o.checkpointBaseline === null) checkpointBaseline = null;
+  else if (typeof o.checkpointBaseline === "number" && Number.isFinite(o.checkpointBaseline)) {
+    checkpointBaseline = o.checkpointBaseline;
+  }
+
+  return { currentSessionId, sessions, checkpointBaseline };
+}
+
 export function useAppState() {
   const [state, setState] = useState<AppState>(() => defaultState());
   const [hydrated, setHydrated] = useState(false);
@@ -114,6 +168,18 @@ export function useAppState() {
     setState(defaultState());
   }, []);
 
+  /** Replace in-memory state and localStorage (full overwrite of saved progress). */
+  const replaceAppState = useCallback((next: AppState) => {
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // quota — still update UI so user sees import attempt
+      }
+    }
+    setState(next);
+  }, []);
+
   return {
     state,
     hydrated,
@@ -122,6 +188,7 @@ export function useAppState() {
     setCurrentSessionId,
     setBaseline,
     resetAll,
+    replaceAppState,
   };
 }
 
@@ -195,4 +262,67 @@ export function wrongQuestionsBucketTally(
     if (!q.correct && q.errorBucket) tally[q.errorBucket]++;
   }
   return tally;
+}
+
+const BUCKET_ORDER: ErrorBucket[] = ["V", "C", "S", "D"];
+
+/** Bucket with highest wrong-question count; ties break in V → C → S → D order. */
+export function dominantBucketFromWrongTally(
+  tally: Record<ErrorBucket, number>,
+): ErrorBucket | null {
+  let best: ErrorBucket | null = null;
+  let bestCount = 0;
+  for (const b of BUCKET_ORDER) {
+    if (tally[b] > bestCount) {
+      bestCount = tally[b];
+      best = b;
+    }
+  }
+  return bestCount > 0 ? best : null;
+}
+
+/** True when URL is empty/whitespace, or a valid http(s) URL. */
+export function isOptionalValidHttpUrl(value: string): boolean {
+  const t = value.trim();
+  if (!t) return true;
+  try {
+    const u = new URL(t);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True if this session has any persisted attempt data (so the user can resume).
+ * Not used for completed sessions (those show "done" instead).
+ */
+export function sessionHasResumableProgress(log: SessionLog | undefined | null): boolean {
+  if (!log) return false;
+  if (log.startedAt) return true;
+  if (log.stepIndex > 0) return true;
+  if (log.elapsedSeconds > 0) return true;
+  if (Object.keys(log.inputs).length > 0) return true;
+  const textFields = [
+    log.pass1Notes,
+    log.pass2GapNotes,
+    log.pass3ShadowNotes,
+    log.gapLogNote,
+    log.contentUsed,
+    log.dylanVideosWatched,
+    log.dylaneNotes,
+  ];
+  if (textFields.some((x) => typeof x === "string" && x.trim().length > 0)) return true;
+  if (log.questions.length > 0) return true;
+  if (log.checkpointQuestions.length > 0) return true;
+  if (log.drillScore != null || log.drillTotal != null) return true;
+  if (log.checkpointScore != null) return true;
+  if (log.dominantErrorBucket) return true;
+  return false;
+}
+
+/** Schedule "started" badge: incomplete session with any resumable attempt state. */
+export function sessionShowsStartedBadge(log: SessionLog | undefined | null): boolean {
+  if (!log || log.completedAt) return false;
+  return sessionHasResumableProgress(log);
 }

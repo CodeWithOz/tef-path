@@ -55,6 +55,7 @@ describe("Index route expected workflow behavior", () => {
       updateSession,
       setCurrentSessionId: vi.fn(),
       resetAll: vi.fn(),
+      replaceAppState: vi.fn(),
     });
 
     const IndexComponent = Route.options.component as React.ComponentType;
@@ -80,6 +81,7 @@ describe("Index route expected workflow behavior", () => {
       updateSession: vi.fn(),
       setCurrentSessionId: vi.fn(),
       resetAll: vi.fn(),
+      replaceAppState: vi.fn(),
     });
 
     const IndexComponent = Route.options.component as React.ComponentType;

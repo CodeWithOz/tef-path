@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -21,10 +21,19 @@ import {
   Settings as SettingsIcon,
   Download,
   Upload,
+  Hourglass,
+  Check,
 } from "lucide-react";
-import { useAppState, useSessionTimer, formatTime } from "@/lib/tef/store";
+import {
+  useAppState,
+  useSessionTimer,
+  formatTime,
+  parseImportedBackup,
+  sessionShowsStartedBadge,
+} from "@/lib/tef/store";
+import { toast } from "sonner";
 import { SCHEDULE, getEntry, getNextEntry, getEntryIndex } from "@/lib/tef/schedule";
-import { SESSION_TYPE_LABEL } from "@/lib/tef/types";
+import { SESSION_TYPE_LABEL, type SessionLog } from "@/lib/tef/types";
 import { STEPS_BY_TYPE } from "@/lib/tef/steps";
 import { ActiveSession } from "@/components/tef/ActiveSession";
 import { ProgressPanel } from "@/components/tef/ProgressPanel";
@@ -52,7 +61,7 @@ export const Route = createFileRoute("/")({
 const RESOURCE_LINKS: Record<string, { label: string; href: string }> = {
   dylane: {
     label: "Dylane's Pronunciation Playlist",
-    href: "https://www.youtube.com/playlist?list=PLb0QZEF-XOxyzS3OFfH59JQNUl-dADRGm",
+    href: "https://www.youtube.com/playlist?list=PL_bt5rj27IIURNkDOqtNfyM9JclJPdwsh",
   },
   rfi_3pass: { label: "RFI Journal en français facile", href: "https://francaisfacile.rfi.fr" },
   tv5_timed: {
@@ -95,8 +104,15 @@ const SESSION_DESCRIPTION: Record<string, string> = {
 };
 
 function Index() {
-  const { state, hydrated, getSession, updateSession, setCurrentSessionId, resetAll } =
-    useAppState();
+  const {
+    state,
+    hydrated,
+    getSession,
+    updateSession,
+    setCurrentSessionId,
+    resetAll,
+    replaceAppState,
+  } = useAppState();
   const [stepTimerKey, setStepTimerKey] = useState(0);
 
   const currentEntry = getEntry(state.currentSessionId) ?? SCHEDULE[0];
@@ -162,19 +178,37 @@ function Index() {
     URL.revokeObjectURL(url);
   };
 
-  const importData = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const data = JSON.parse(reader.result as string);
-        window.localStorage.setItem("tef_dashboard_state", JSON.stringify(data));
-        window.location.reload();
-      } catch {
-        alert("Invalid backup file");
-      }
-    };
-    reader.readAsText(file);
-  };
+  const importData = useCallback(
+    (file: File) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(reader.result as string) as unknown;
+          const next = parseImportedBackup(parsed);
+          if (!next) {
+            toast.error("Invalid backup file", {
+              description: "Use a JSON file exported from this dashboard (Settings → Download backup).",
+            });
+            return;
+          }
+          replaceAppState(next);
+          setStepTimerKey((k) => k + 1);
+          toast.success("Progress imported", {
+            description: "Saved progress on this device was replaced. You can continue on this browser.",
+          });
+        } catch {
+          toast.error("Could not read backup", {
+            description: "The file is not valid JSON.",
+          });
+        }
+      };
+      reader.onerror = () => {
+        toast.error("Could not read file");
+      };
+      reader.readAsText(file);
+    },
+    [replaceAppState],
+  );
 
   const sessionIndex = getEntryIndex(currentEntry.sessionId);
 
@@ -253,7 +287,7 @@ function Index() {
             <TabsContent value="schedule">
               <ScheduleList
                 currentId={state.currentSessionId}
-                completed={state.sessions}
+                sessions={state.sessions}
                 onJump={(id) => setCurrentSessionId(id)}
               />
             </TabsContent>
@@ -399,11 +433,11 @@ function Row({ label, value }: { label: string; value: string }) {
 
 function ScheduleList({
   currentId,
-  completed,
+  sessions,
   onJump,
 }: {
   currentId: string;
-  completed: Record<string, { completedAt: string | null }>;
+  sessions: Record<string, SessionLog>;
   onJump: (id: string) => void;
 }) {
   const groups = useMemo(() => {
@@ -427,7 +461,9 @@ function ScheduleList({
           <div className="space-y-1">
             {items.map((e) => {
               const isCurrent = e.sessionId === currentId;
-              const isDone = !!completed[e.sessionId]?.completedAt;
+              const log = sessions[e.sessionId];
+              const isDone = !!log?.completedAt;
+              const isStarted = sessionShowsStartedBadge(log);
               return (
                 <button
                   key={e.sessionId}
@@ -452,7 +488,15 @@ function ScheduleList({
                   </div>
                   <div className="text-xs">
                     {isDone ? (
-                      <span className="text-emerald-600">✓ done</span>
+                      <span className="inline-flex items-center gap-1 text-emerald-600">
+                        <Check className="h-3.5 w-3.5" aria-hidden />
+                        done
+                      </span>
+                    ) : isStarted ? (
+                      <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                        <Hourglass className="h-3.5 w-3.5" aria-hidden />
+                        started
+                      </span>
                     ) : isCurrent ? (
                       <span className="text-primary">current</span>
                     ) : (
@@ -490,7 +534,8 @@ function SettingsMenu({
         <AlertDialogHeader>
           <AlertDialogTitle>Settings</AlertDialogTitle>
           <AlertDialogDescription>
-            Back up your progress, restore from a previous backup, or reset all data.
+            Back up your progress, import a backup from another device, or reset all data. Importing
+            replaces all saved progress in this browser with the file contents.
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -500,14 +545,15 @@ function SettingsMenu({
           </Button>
 
           <label className="flex cursor-pointer items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-medium hover:bg-accent/30">
-            <Upload className="h-4 w-4" /> Restore from file
+            <Upload className="h-4 w-4" /> Import backup (JSON)
             <input
               type="file"
-              accept="application/json"
+              accept="application/json,.json"
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) onImport(f);
+                e.target.value = "";
               }}
             />
           </label>

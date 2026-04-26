@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ActiveSession } from "./ActiveSession";
 import type { ScheduleEntry, SessionLog, SessionType } from "@/lib/tef/types";
@@ -69,7 +69,7 @@ function makeSession(stepIndex = 0, sessionType: SessionType = "tv5_timed"): Ses
 }
 
 describe("ActiveSession expected behavior", () => {
-  it("requires episode title and episode URL before advancing when the step links to a catalog", async () => {
+  it("requires episode title; URL optional when empty", async () => {
     const user = userEvent.setup();
     const session = makeSession(0, "rfi_3pass");
     render(<SessionHarness entry={makeEntry("rfi_3pass")} initialSession={session} />);
@@ -80,10 +80,29 @@ describe("ActiveSession expected behavior", () => {
     await user.type(screen.getByLabelText(/episode title/i), "Journal du test");
     await user.click(screen.getByRole("button", { name: /next step/i }));
 
-    expect(
-      screen.getByText(/please paste the episode page url before continuing/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/pass 1/i)).toBeInTheDocument();
+  });
 
+  it("blocks non-empty episode URL that is not a valid http(s) URL", async () => {
+    const user = userEvent.setup();
+    const session = makeSession(0, "rfi_3pass");
+    render(<SessionHarness entry={makeEntry("rfi_3pass")} initialSession={session} />);
+
+    await user.type(screen.getByLabelText(/episode title/i), "Journal du test");
+    await user.type(screen.getByLabelText(/episode url/i), "cdsfdsv");
+    await user.click(screen.getByRole("button", { name: /next step/i }));
+
+    expect(
+      screen.getByText(/enter a valid http\(s\) url, or leave the episode url blank/i),
+    ).toBeInTheDocument();
+  });
+
+  it("accepts a valid https episode URL when provided", async () => {
+    const user = userEvent.setup();
+    const session = makeSession(0, "rfi_3pass");
+    render(<SessionHarness entry={makeEntry("rfi_3pass")} initialSession={session} />);
+
+    await user.type(screen.getByLabelText(/episode title/i), "Journal du test");
     await user.type(
       screen.getByLabelText(/episode url/i),
       "https://francaisfacile.rfi.fr/fr/podcasts/journal-en-fran%C3%A7ais-facile-102",
@@ -223,5 +242,34 @@ describe("ActiveSession expected behavior", () => {
     expect(screen.getByText(/C:\s*2/i)).toBeInTheDocument();
     expect(screen.getByText(/S:\s*0/i)).toBeInTheDocument();
     expect(screen.getByText(/D:\s*1/i)).toBeInTheDocument();
+  });
+
+  it("preselects dominant error bucket with highest wrong-question count", async () => {
+    const onPatch = vi.fn();
+    const session = makeSession(5);
+    session.questions = [
+      { questionNumber: 1, correct: false, errorBucket: "C" },
+      { questionNumber: 2, correct: false, errorBucket: "C" },
+      { questionNumber: 3, correct: false, errorBucket: "V" },
+    ];
+
+    render(
+      <ActiveSession
+        entry={makeEntry("tv5_timed")}
+        session={session}
+        stepElapsed={0}
+        onPatch={onPatch}
+        onComplete={vi.fn()}
+        onResetStepTimer={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onPatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          inputs: expect.objectContaining({ tv5_bucket: "C" }),
+        }),
+      );
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,12 @@ import { ErrorBucketSelect } from "./ErrorBucketSelect";
 import { QuestionLogger } from "./QuestionLogger";
 import { STEPS_BY_TYPE, ebdDrillText, checkpointDecisionText, type StepDef } from "@/lib/tef/steps";
 import type { SessionLog, QuestionLog, ScheduleEntry } from "@/lib/tef/types";
-import { formatTime, wrongQuestionsBucketTally } from "@/lib/tef/store";
+import {
+  dominantBucketFromWrongTally,
+  formatTime,
+  isOptionalValidHttpUrl,
+  wrongQuestionsBucketTally,
+} from "@/lib/tef/store";
 
 export type EpisodeCaptureValue = { title: string; url: string };
 
@@ -112,6 +117,29 @@ export function ActiveSession({
 
   const checklistLabels = useMemo(() => resolveChecklistLabels(step, session), [step, session]);
 
+  const rawBucketInput = session.inputs[step.id];
+  const hasBucketSelection =
+    rawBucketInput === "V" ||
+    rawBucketInput === "C" ||
+    rawBucketInput === "S" ||
+    rawBucketInput === "D";
+
+  useEffect(() => {
+    if (step.inputType !== "error_bucket_select") return;
+    if (hasBucketSelection) return;
+    const tally = wrongQuestionsBucketTally(session.questions);
+    const pick = dominantBucketFromWrongTally(tally);
+    if (!pick) return;
+    onPatch({ inputs: { ...session.inputs, [step.id]: pick } });
+  }, [
+    step.id,
+    step.inputType,
+    hasBucketSelection,
+    session.questions,
+    session.inputs,
+    onPatch,
+  ]);
+
   const validate = (): string | null => {
     if (step.required === false) return null;
     switch (step.inputType) {
@@ -124,9 +152,8 @@ export function ActiveSession({
         if (!ep.title.trim()) {
           return "Please enter the episode title before continuing.";
         }
-        const urlExpected = Boolean(step.link?.trim());
-        if (urlExpected && !ep.url.trim()) {
-          return "Please paste the episode page URL before continuing.";
+        if (!isOptionalValidHttpUrl(ep.url)) {
+          return "Enter a valid http(s) URL, or leave the episode URL blank.";
         }
         return null;
       }
@@ -332,10 +359,10 @@ export function ActiveSession({
                     <Label htmlFor={`${step.id}-episode-url`}>Episode URL</Label>
                     <Input
                       id={`${step.id}-episode-url`}
-                      type="url"
+                      type="text"
                       value={ep.url}
                       onChange={(e) => setInput({ ...ep, url: e.target.value })}
-                      placeholder="Paste episode page URL"
+                      placeholder="https://… (optional)"
                     />
                   </div>
                 </>

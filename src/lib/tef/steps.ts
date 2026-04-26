@@ -30,7 +30,7 @@ export interface StepDef {
 
 const RFI_LINK = "https://francaisfacile.rfi.fr";
 const TV5_LINK = "https://apprendre.tv5monde.com/fr/exercices-de-francais/7-jours-sur-la-planete";
-const DYLANE_LINK = "https://www.youtube.com/playlist?list=PLb0QZEF-XOxyzS3OFfH59JQNUl-dADRGm";
+const DYLANE_LINK = "https://www.youtube.com/playlist?list=PL_bt5rj27IIURNkDOqtNfyM9JclJPdwsh";
 
 const dylane: StepDef[] = [
   {
@@ -129,10 +129,9 @@ const tv5Timed: StepDef[] = [
     id: "tv5_open",
     title: "Open 7 jours sur la planète",
     instruction:
-      "Go to apprendre.tv5monde.com and open this week's 7 jours sur la planète dossier. Choose one report (each dossier has 3). Do not look at the exercises yet.",
+      "Go to apprendre.tv5monde.com and open this week's 7 jours sur la planète dossier. Choose one report (each dossier has 3). Do not look at the exercises yet. Note the report title and page URL for your log.",
     link: TV5_LINK,
-    inputType: "content_field",
-    label: "Which report did you use?",
+    inputType: "episode_capture",
   },
   {
     id: "tv5_listen",
