@@ -37,6 +37,7 @@ export interface SessionLog {
   dylaneNotes: string;
   contentUsed: string;
   stepIndex: number;
+  startedAt: string | null;
   // generic step inputs keyed by stepId
   inputs: Record<string, unknown>;
 }
