@@ -35,3 +35,6 @@ workflow-report.md
 
 # Cursor
 .cursor/hooks/state
+
+# Playwright
+.playwright-mcp/
