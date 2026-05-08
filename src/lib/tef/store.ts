@@ -214,22 +214,25 @@ export function useSessionTimer(
   useEffect(() => {
     if (!active) return;
     lastTickRef.current = Date.now();
-    const interval = window.setInterval(() => {
-      if (document.hidden) return;
+
+    const tick = () => {
       const now = Date.now();
       const delta = Math.floor((now - lastTickRef.current) / 1000);
       if (delta >= 1) {
-        lastTickRef.current = now;
+        lastTickRef.current += delta * 1000;
         setElapsed((e) => {
           const next = e + delta;
           onTickRef.current(next);
           return next;
         });
       }
-    }, 1000);
+    };
 
+    const interval = window.setInterval(tick, 1000);
+    // When the tab becomes visible again, immediately catch up on any
+    // wall-clock time that elapsed while the interval was throttled.
     const onVis = () => {
-      lastTickRef.current = Date.now();
+      if (!document.hidden) tick();
     };
     document.addEventListener("visibilitychange", onVis);
     return () => {
